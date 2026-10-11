@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#0b1020" />
-  <meta name="description" content="PhiScribe: speak, edit, and save transcripts as text or PDF. Your drafts stay in your browser." />
+  <meta name="description" content="PhiScribe: speak or upload audio, edit, and save transcripts as text or PDF. Your drafts stay in your browser." />
   <link rel="icon" type="image/svg+xml" href="./assets/icon.svg" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="stylesheet" href="./styles.css" />
@@ -24,7 +24,7 @@
       <section class="hero" aria-label="Introduction">
         <div class="eyebrow"><span class="tiny-glow"></span> PRIVATE WORKSPACE · NO ACCOUNT</div>
         <h1>From spoken words<br /><span>to finished documents.</span></h1>
-        <p>Capture your voice, polish the transcript, and turn it into a PDF. No subscriptions. No unnecessary server. Just your thoughts, without the paperwork circus.</p>
+        <p>Speak or import an audio clip, polish the transcript, and turn it into a PDF. No subscriptions. No unnecessary server. Just your thoughts, without the paperwork circus.</p>
       </section>
 
       <div class="workspace">
@@ -46,6 +46,23 @@
           </div>
 
           <div class="interim" aria-live="polite"><span class="interim-label">LIVE WORDS</span><span id="interimText">Your words will appear here while you're speaking…</span></div>
+
+          <section class="audio-import-section" aria-labelledby="audioHeading">
+            <div class="audio-heading"><div><span class="section-kicker">UPLOAD / TRANSCRIBE</span><h3 id="audioHeading">Audio file → words</h3></div><span class="audio-format">MP3 · WAV · M4A +</span></div>
+            <div id="audioDrop" class="audio-drop">
+              <input type="file" id="audioInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.oga,.webm,.aac,.flac,.mp4" hidden />
+              <button id="chooseAudioButton" class="button button-outline" type="button">↑ Choose audio clip</button>
+              <span class="small-note">Or drop an audio file here · max 250 MB</span>
+              <p id="audioFileInfo" class="audio-file-info">No file selected</p>
+            </div>
+            <div class="audio-consent" id="audioConsentWrap" hidden><label><input type="checkbox" id="audioServiceConsent" /> I understand browser-service mode may send this audio to my browser's speech provider.</label></div>
+            <div class="audio-actions">
+              <button id="transcribeAudioButton" class="button button-primary" type="button" disabled>▶ Transcribe audio</button>
+              <button id="stopAudioButton" class="button button-secondary" type="button" disabled>■ Stop</button>
+            </div>
+            <div class="audio-progress-row"><progress id="audioProgress" value="0" max="100" aria-label="Audio transcription progress"></progress><span id="audioProgressLabel">0%</span></div>
+            <p id="audioNotice" class="small-note audio-notice" role="status" aria-live="polite">Uses the selected file, never the microphone. Requires desktop Chrome/Edge 135+ and browser speech support. Strict local mode still requires an on-device language pack.</p>
+          </section>
 
           <div class="divider"></div>
           <label for="languageSelect">Spoken language</label>
