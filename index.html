@@ -51,8 +51,8 @@
             <div class="audio-heading"><div><span class="section-kicker">UPLOAD / TRANSCRIBE</span><h3 id="audioHeading">Audio file → words</h3></div><span class="audio-format">MP3 · WAV · M4A +</span></div>
             <div id="audioDrop" class="audio-drop">
               <input type="file" id="audioInput" accept="audio/*,.mp3,.wav,.m4a,.ogg,.oga,.webm,.aac,.flac,.mp4" hidden />
-              <button id="chooseAudioButton" class="button button-outline" type="button">↑ Choose audio clip</button>
-              <span class="small-note">Or drop an audio file here · max 250 MB</span>
+              <div class="quick-import-actions"><button id="chooseAudioButton" class="button button-outline" type="button">↑ Choose audio clip</button><button id="pasteAudioButton" class="button button-outline" type="button">▣ Paste audio file</button></div>
+              <span class="small-note">Or drag/drop a clip, or press Ctrl+V with a copied audio file · max 250 MB</span>
               <p id="audioFileInfo" class="audio-file-info">No file selected</p>
             </div>
             <div class="audio-consent" id="audioConsentWrap" hidden><label><input type="checkbox" id="audioServiceConsent" /> I understand browser-service mode may send this audio to my browser's speech provider.</label></div>
@@ -102,6 +102,25 @@
           <div class="editor-toolbar"><label for="transcriptText">Transcript</label><button id="copyButton" class="text-button" type="button">Copy text</button></div>
           <textarea id="transcriptText" placeholder="Press Start speaking, or type/paste your notes here. Everything is editable before export." spellcheck="true"></textarea>
           <div class="editor-footnote"><span><span class="dot-icon" aria-hidden="true">●</span> Automatically saved to this browser</span><span id="charCount">0 characters</span></div>
+
+          <section class="handoff-panel" aria-labelledby="handoffHeading">
+            <div class="handoff-heading"><span class="section-kicker">MESSAGE FAST LANE</span><h3 id="handoffHeading">Voice message → ChatGPT</h3></div>
+            <p class="small-note">For Messenger voice notes, support chats, and technical recordings. No Facebook login, inbox access, or automatic AI upload.</p>
+            <label for="handoffSource">Sender / source <span class="optional">(optional; label only)</span></label>
+            <input id="handoffSource" type="text" maxlength="120" placeholder="Messenger · Support call · Technician…" autocomplete="off" />
+            <label for="handoffGoal" class="label-with-space">What should ChatGPT help with?</label>
+            <select id="handoffGoal">
+              <option value="explain">Explain technical details</option>
+              <option value="troubleshoot">Build a troubleshooting plan</option>
+              <option value="summarize">Summarize the message</option>
+              <option value="actions">Extract action items</option>
+              <option value="reply">Draft a reply</option>
+              <option value="verify">Check uncertain technical words</option>
+            </select>
+            <div class="handoff-actions"><button id="copyHandoffButton" class="button button-primary" type="button">▣ Copy for ChatGPT</button><a class="button button-outline external-chat" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer">Open ChatGPT ↗</a></div>
+            <details id="handoffPreviewWrap"><summary>Preview the exact text you'll copy</summary><pre id="handoffPreview" class="handoff-preview"></pre></details>
+            <p id="handoffNotice" class="small-note" role="status" aria-live="polite">Nothing is sent anywhere by PhiScribe. Review and paste the copied text yourself.</p>
+          </section>
 
           <div class="divider"></div>
           <div class="panel-heading export-head"><div><span class="section-kicker">03 / EXPORT</span><h2>Make it a document</h2></div></div>
