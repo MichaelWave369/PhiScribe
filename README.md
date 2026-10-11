@@ -2,7 +2,8 @@
 
 **Microphone or audio file → text → PDF.** A free, original, dependency-free, local-first transcript and document editor, suitable for GitHub Pages.
 
-## Features (v0.3.0)
+## Features (v0.4.0)
+- **Tab Listen (v0.4):** explicit, user-approved browser tab audio capture for Messenger voice notes, via `getDisplayMedia({ video: true, audio: true })` and `SpeechRecognition.start(audioTrack)`. Requires a desktop Chrome/Edge build supporting both APIs. Rejects screen/window shares and tabs without a live audio track; never falls back to the microphone. Stop sharing using the app or browser indicator. A video track is granted for browser permission but PhiScribe does not process or save video frames. Strict on-device recognition is the default; browser-service mode requires separate consent.
 - Record live microphone speech via the browser Web Speech API (where supported).
 - **Message Fast Lane:** paste real audio files when the clipboard exposes them, or drag/drop a voice note; create six reviewable ChatGPT handoffs (technical explanation, troubleshooting, summary, action items, draft reply, transcript verification). The user explicitly copies and pastes; no automatic AI sending or connection to Facebook.
 - **Transcribe an uploaded audio file** in compatible desktop Chromium browsers (Chrome/Edge 135+). Drag/drop or choose an MP3, WAV, M4A, MP4, AAC, OGG, WebM or FLAC clip (max 250 MB). Actual playable codecs depend on the browser.
@@ -42,6 +43,16 @@ No `npm install` needed. `npm test` runs unit tests with Node 22's built-in runn
 4. Edit any recognition errors in the document editor. Click **Save as PDF** and choose Save as PDF in the print dialog, or download TXT/Markdown/JSON backup.
 
 This is a browser API integration, **not** a bundled Whisper model. It cannot guarantee offline transcription everywhere and the exact accuracy, speed and file codec support are determined by the browser.
+
+## Tab Listen workflow (no downloading Messenger audio)
+
+1. In desktop Chrome or Edge on HTTPS (e.g., GitHub Pages), open PhiScribe and Messenger in separate tabs.
+2. Choose the spoken language. Keep **On-device only (strict)** when supported, or deliberately select **Browser service** and consent to browser-provider processing.
+3. Click **Start tab listen**, select the **Messenger browser tab**, and enable **Share tab audio** in the browser's picker. The app rejects whole-screen and window sharing.
+4. Play the voice note in Messenger. Recognized words appear in PhiScribe. Click **Stop sharing** when finished, edit as needed, and use **Copy for ChatGPT** or export to PDF.
+5. If Chrome offers no tab audio track, or the Web Speech API cannot recognize it, use the existing audio-file import workflow. Actual Messenger playback still needs real-browser verification.
+
+The browser may provide a video track as part of share permission, but PhiScribe ignores video frames. No Facebook inbox access, automatic recording, browser extension, or hidden monitoring is implemented.
 
 ## Messenger voice-note workflow
 
