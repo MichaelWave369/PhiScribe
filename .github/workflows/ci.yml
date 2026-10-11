@@ -1,0 +1,21 @@
+name: PhiScribe checks
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Unit tests
+        run: npm test
+      - name: Browser bundle syntax checks
+        run: |
+          node --check src/app.js
+          node --check src/audio-import.mjs
