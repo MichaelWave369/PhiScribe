@@ -1,6 +1,6 @@
-const CACHE = 'phiscribe-v0.3-message-fast-lane';
+const CACHE = 'phiscribe-v0.4-tab-listen';
 const ASSETS = ['./', './index.html', './styles.css', './src/app.js',
-  './src/transcript-utils.mjs', './src/audio-import.mjs', './src/message-fast-lane.mjs', './manifest.webmanifest', './assets/icon.svg'];
+  './src/transcript-utils.mjs', './src/audio-import.mjs', './src/message-fast-lane.mjs', './src/tab-listen.mjs', './manifest.webmanifest', './assets/icon.svg'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
