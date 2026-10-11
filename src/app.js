@@ -1,6 +1,7 @@
 import { BACKUP_FORMAT, countWords, safeFilename, elapsedClock,
   makeMarkdown, restoreBackup, newDocument } from './transcript-utils.mjs';
 import { validateAudioFile, supportsAudioTrackRecognition, humanDuration, appendTranscript } from './audio-import.mjs';
+import { clipboardAudioExtension, makeAIHandoff } from './message-fast-lane.mjs';
 
 const STORAGE_KEY = 'phiscribe.v1.draft';
 const $ = (id) => document.getElementById(id);
@@ -57,6 +58,8 @@ function syncDocument() {
   documentState.text = ui.text.value;
   documentState.language = ui.language.value;
   documentState.mode = ui.mode.value;
+  documentState.handoffSource = $('handoffSource').value;
+  documentState.handoffGoal = $('handoffGoal').value;
 }
 function saveNow() {
   clearTimeout(saveHandle);
@@ -84,6 +87,8 @@ function populate() {
   ui.text.value = documentState.text;
   ui.language.value = Array.from(ui.language.options).some(option => option.value === documentState.language) ? documentState.language : 'en-US';
   ui.mode.value = ['local', 'browser'].includes(documentState.mode) ? documentState.mode : 'local';
+  $('handoffSource').value = documentState.handoffSource || '';
+  $('handoffGoal').value = documentState.handoffGoal || 'explain';
   updateStats(); drawTimer(); updatePrivacyHint();
 }
 function loadSaved() {
@@ -279,6 +284,60 @@ function chooseAudio(file) {
   else audioMessage(ui.mode.value === 'local' ? 'Ready to transcribe locally, if the browser has an on-device language pack.' : 'Confirm browser-service audio processing above, then transcribe. The browser provider may receive audio.');
   updateFileControls();
 }
+async function pasteAudioFromClipboard() {
+  if (audioTask || audioStarting) { audioMessage('Stop the current transcription before importing another clip.', true); return; }
+  if (!window.isSecureContext || !navigator.clipboard?.read) {
+    audioMessage('Clipboard-file import needs a secure browser with clipboard.read support. Use Choose audio clip instead.', true); return;
+  }
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      const mime = item.types.find(type => clipboardAudioExtension(type));
+      if (!mime) continue;
+      const ext = clipboardAudioExtension(mime);
+      const blob = await item.getType(mime);
+      const file = new File([blob], `clipboard-voice-message.${ext}`, {type: mime});
+      chooseAudio(file);
+      return;
+    }
+    audioMessage('Clipboard contains no audio file. Copy/download the actual voice clip first; a Messenger link or player is not an audio file.', true);
+  } catch (error) {
+    audioMessage(`Clipboard audio unavailable (${error.name || 'blocked'}). Choose or drag the saved recording instead.`, true);
+  }
+}
+function handleAudioPaste(event) {
+  const files = Array.from(event.clipboardData?.files || []);
+  const audio = files.find(file => {
+    try { validateAudioFile(file); return true; } catch { return false; }
+  });
+  if (!audio) return; // Never intercept normal text pasting into the editor.
+  event.preventDefault();
+  chooseAudio(audio);
+}
+function handoffData() {
+  return { title: ui.title.value, note: ui.note.value, text: ui.text.value,
+    source: $('handoffSource').value, goal: $('handoffGoal').value };
+}
+function updateHandoffPreview() {
+  if (!$('handoffPreviewWrap').open) return;
+  try { $('handoffPreview').textContent = makeAIHandoff(handoffData()); }
+  catch { $('handoffPreview').textContent = 'Transcribe or type a message first.'; }
+}
+async function copyHandoff() {
+  try {
+    const prepared = makeAIHandoff(handoffData());
+    await navigator.clipboard.writeText(prepared);
+    $('handoffNotice').textContent = 'Copied! Open ChatGPT and paste. Nothing was automatically sent.';
+    $('handoffNotice').classList.remove('error');
+  } catch (error) {
+    $('handoffNotice').textContent = error?.name === 'NotAllowedError' ?
+      'Clipboard permission denied. Expand Preview, select the text and copy manually.' :
+      (error?.message || 'Copy failed. Expand Preview and copy the text manually.');
+    $('handoffNotice').classList.add('error');
+    $('handoffPreviewWrap').open = true;
+    updateHandoffPreview();
+  }
+}
 function settleRecordingSegment() {
   if (activeSince !== null) {
     documentState.elapsedMs += Date.now() - activeSince;
@@ -467,6 +526,8 @@ function wire() {
   ui.start.addEventListener('click', startRecording);
   ui.stop.addEventListener('click', stopRecognition);
   $('chooseAudioButton').addEventListener('click', () => $('audioInput').click());
+  $('pasteAudioButton').addEventListener('click', pasteAudioFromClipboard);
+  document.addEventListener('paste', handleAudioPaste);
   $('audioInput').addEventListener('change', event => { chooseAudio(event.target.files?.[0]); event.target.value = ''; });
   $('audioServiceConsent').addEventListener('change', updateFileControls);
   $('transcribeAudioButton').addEventListener('click', beginAudioTranscription);
@@ -475,6 +536,11 @@ function wire() {
   dropArea.addEventListener('dragover', event => { event.preventDefault(); if (!audioTask) dropArea.classList.add('drag-active'); });
   dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-active'));
   dropArea.addEventListener('drop', event => { event.preventDefault(); dropArea.classList.remove('drag-active'); chooseAudio(event.dataTransfer?.files?.[0]); });
+  $('handoffSource').addEventListener('input', () => { scheduleSave(); updateHandoffPreview(); });
+  $('handoffGoal').addEventListener('change', () => { scheduleSave(); updateHandoffPreview(); });
+  $('handoffPreviewWrap').addEventListener('toggle', updateHandoffPreview);
+  [ui.title, ui.note, ui.text].forEach(el => el.addEventListener('input', updateHandoffPreview));
+  $('copyHandoffButton').addEventListener('click', copyHandoff);
   $('txtButton').addEventListener('click', () => exportFile('txt'));
   $('mdButton').addEventListener('click', () => exportFile('md'));
   $('backupButton').addEventListener('click', () => exportFile('json'));

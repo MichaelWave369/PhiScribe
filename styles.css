@@ -39,3 +39,19 @@ a{color:inherit;text-decoration:none}
 .audio-progress-row{display:flex;align-items:center;gap:11px;color:#91b0ba;font-size:11px}.audio-progress-row progress{width:100%;height:9px;accent-color:#7be8d3}
 .audio-notice{margin-top:10px;overflow-wrap:anywhere}.audio-notice.error{color:#f4abb0}
 @media(max-width:510px){.audio-import-section{padding:12px}.audio-heading{flex-wrap:wrap}}
+
+/* v0.3: Message Fast Lane */
+.quick-import-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.quick-import-actions .button{min-width:145px}
+.handoff-panel{margin:22px 0 6px;padding:19px;border:1px solid #3b6562;background:linear-gradient(140deg,#142a32,#102130);border-radius:12px}
+.handoff-heading h3{font-size:16px;letter-spacing:-.3px;margin:6px 0;color:#e6f6f3}
+.handoff-panel>label{display:block;margin-top:16px}
+.handoff-panel input,.handoff-panel select{margin-top:9px}
+.handoff-actions{display:flex;gap:9px;margin-top:16px;flex-wrap:wrap}
+.handoff-actions .button{flex:1;min-width:130px;text-align:center}
+a.external-chat{display:flex;align-items:center;justify-content:center;text-decoration:none}
+.handoff-panel details{border-top:1px solid #344b53;margin-top:17px;padding-top:14px;color:#b5d7d1;font-size:12px}
+.handoff-panel summary{cursor:pointer}
+.handoff-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:260px;overflow:auto;padding:11px;background:#0c1924;border-radius:7px;font-size:11px;line-height:1.5;user-select:text}
+#handoffNotice.error{color:#f2aaaa}
+@media(max-width:510px){.handoff-panel{padding:13px}.quick-import-actions .button{flex:1}}
