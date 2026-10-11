@@ -1,6 +1,6 @@
-const CACHE = 'phiscribe-v1.0.1-file-transcription';
+const CACHE = 'phiscribe-v0.3-message-fast-lane';
 const ASSETS = ['./', './index.html', './styles.css', './src/app.js',
-  './src/transcript-utils.mjs', './src/audio-import.mjs', './manifest.webmanifest', './assets/icon.svg'];
+  './src/transcript-utils.mjs', './src/audio-import.mjs', './src/message-fast-lane.mjs', './manifest.webmanifest', './assets/icon.svg'];
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)).then(() => self.skipWaiting()));
 });
