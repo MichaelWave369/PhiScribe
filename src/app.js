@@ -2,6 +2,7 @@ import { BACKUP_FORMAT, countWords, safeFilename, elapsedClock,
   makeMarkdown, restoreBackup, newDocument } from './transcript-utils.mjs';
 import { validateAudioFile, supportsAudioTrackRecognition, humanDuration, appendTranscript } from './audio-import.mjs';
 import { clipboardAudioExtension, makeAIHandoff } from './message-fast-lane.mjs';
+import { canListenToTab, tabShareOptions, validateTabStream, describeTabCaptureError } from './tab-listen.mjs';
 
 const STORAGE_KEY = 'phiscribe.v1.draft';
 const $ = (id) => document.getElementById(id);
@@ -32,6 +33,12 @@ let selectedAudio = null;
 let audioTask = null;
 let audioToken = 0;
 let audioStarting = false;
+// Tab Listen never uses getUserMedia or a no-argument SpeechRecognition.start().
+const tabListenSupported = canListenToTab(navigator.userAgent, Boolean(Recognizer),
+  typeof navigator.mediaDevices?.getDisplayMedia === 'function', window.isSecureContext);
+let tabTask = null;
+let tabStarting = false;
+let tabToken = 0;
 
 function setStatus(label, type = 'idle') {
   ui.status.dataset.state = type;
@@ -113,6 +120,7 @@ function updateAudioConsent() {
   $('audioConsentWrap').hidden = ui.mode.value !== 'browser';
   $('audioServiceConsent').checked = false;
   updateFileControls();
+  updateTabConsent();
 }
 function audioMessage(text, isError = false) {
   const node = $('audioNotice');
@@ -121,7 +129,7 @@ function audioMessage(text, isError = false) {
 }
 function updateFileControls() {
   $('transcribeAudioButton').disabled = !selectedAudio || !fileRecognitionSupported || Boolean(audioTask) || audioStarting ||
-    wantsRecording || startInProgress || (ui.mode.value === 'browser' && !$('audioServiceConsent').checked);
+    wantsRecording || startInProgress || Boolean(tabTask) || tabStarting || (ui.mode.value === 'browser' && !$('audioServiceConsent').checked);
   $('stopAudioButton').disabled = !audioTask;
   $('chooseAudioButton').disabled = Boolean(audioTask) || audioStarting;
   $('audioInput').disabled = Boolean(audioTask) || audioStarting;
@@ -217,7 +225,7 @@ function runFileRecognizer(task) {
   }
 }
 async function beginAudioTranscription() {
-  if (!selectedAudio || audioTask || audioStarting || !fileRecognitionSupported || wantsRecording || startInProgress) return;
+  if (!selectedAudio || audioTask || audioStarting || tabTask || tabStarting || !fileRecognitionSupported || wantsRecording || startInProgress) return;
   if (ui.mode.value === 'browser' && !$('audioServiceConsent').checked) return;
   const token = ++audioToken;
   audioStarting = true;
@@ -338,6 +346,132 @@ async function copyHandoff() {
     updateHandoffPreview();
   }
 }
+function tabMessage(text, isError = false) {
+  $('tabListenStatus').textContent = text;
+  $('tabListenStatus').classList.toggle('error', isError);
+}
+function updateTabConsent() {
+  $('tabConsentWrap').hidden = ui.mode.value !== 'browser';
+  $('tabServiceConsent').checked = false;
+  updateTabControls();
+}
+function updateTabControls() {
+  $('startTabButton').disabled = !tabListenSupported || Boolean(tabTask) || tabStarting ||
+    wantsRecording || startInProgress || Boolean(audioTask) || audioStarting ||
+    (ui.mode.value === 'browser' && !$('tabServiceConsent').checked);
+  $('stopTabButton').disabled = !tabTask;
+  $('startTabButton').textContent = tabStarting ? 'Opening tab picker…' : '◉ Start tab listen';
+}
+function releaseTab(task, reason, isError = false) {
+  if (tabTask !== task) return;
+  tabTask = null;
+  clearTimeout(task.restartHandle);
+  if (task.engine) {
+    task.engine.onstart = task.engine.onresult = task.engine.onerror = task.engine.onend = null;
+    try { task.engine.abort(); } catch {}
+  }
+  for (const track of task.stream.getTracks()) {
+    track.onended = null;
+    try { track.stop(); } catch {}
+  }
+  $('tabInterim').textContent = 'Sharing ended. Your text stays in the editor.';
+  $('tabInterim').classList.remove('active');
+  tabMessage(reason, isError);
+  updateButtonState();
+}
+function stopTabListen() {
+  if (tabTask) releaseTab(tabTask, 'Tab listening stopped. Partial transcript preserved.');
+}
+function startTabRecognizer(task) {
+  if (tabTask !== task || task.audio.readyState !== 'live') return;
+  const engine = new Recognizer();
+  task.engine = engine;
+  engine.lang = task.language;
+  engine.continuous = true;
+  engine.interimResults = true;
+  engine.maxAlternatives = 1;
+  if (task.local) engine.processLocally = true;
+  engine.onstart = () => {
+    if (tabTask !== task) { try { engine.abort(); } catch {} return; }
+    tabMessage(task.local ? 'Listening to shared tab audio on-device. Play the voice note in the shared tab.' :
+      'Listening to shared tab audio. Your browser speech provider may receive this audio.');
+  };
+  engine.onresult = event => {
+    if (tabTask !== task) return;
+    let interim = '';
+    const finals = [];
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const item = event.results[i];
+      if (item?.isFinal) finals.push((item[0]?.transcript || '').trim());
+      else interim += item?.[0]?.transcript || '';
+    }
+    if (finals.filter(Boolean).length) {
+      appendRecognizedWords(finals.filter(Boolean).join(' '));
+      task.restarts = 0;
+    }
+    $('tabInterim').textContent = interim || 'Listening for the next words…';
+    $('tabInterim').classList.toggle('active', Boolean(interim));
+  };
+  engine.onerror = event => {
+    if (tabTask !== task) return;
+    if (event.error === 'no-speech') return;
+    const errors = {
+      'not-allowed': 'Tab audio recognition permission denied.',
+      'service-not-allowed': 'The browser speech service refused the shared audio.',
+      'network': 'The speech provider could not be reached.',
+      'language-not-supported': 'The selected language is not available.',
+      'audio-capture': 'The browser could not use the shared tab audio track.',
+    };
+    releaseTab(task, (errors[event.error] || `Speech error: ${event.error || 'unknown'}`) + ' Partial transcript preserved.', true);
+  };
+  engine.onend = () => {
+    if (tabTask !== task) return;
+    if (task.audio.readyState !== 'live' || ++task.restarts > 30) {
+      releaseTab(task, 'Tab audio recognition ended repeatedly or sharing stopped. Partial transcript preserved.', true);
+      return;
+    }
+    task.restartHandle = setTimeout(() => startTabRecognizer(task), 500);
+  };
+  try {
+    // Always pass the audio track; start() without arguments may use the microphone.
+    engine.start(task.audio);
+  } catch (error) {
+    releaseTab(task, `Tab-track recognition failed (${error.message}). No microphone fallback attempted.`, true);
+  }
+}
+async function beginTabListen() {
+  if (!tabListenSupported || tabStarting || tabTask || wantsRecording || startInProgress || audioTask || audioStarting ||
+      (ui.mode.value === 'browser' && !$('tabServiceConsent').checked)) return;
+  const token = ++tabToken;
+  tabStarting = true;
+  updateButtonState();
+  tabMessage('Choose the Messenger tab and enable Share tab audio…');
+  let stream;
+  try {
+    // Invoke the browser's picker immediately from a click, before any await.
+    stream = await navigator.mediaDevices.getDisplayMedia(tabShareOptions());
+    if (token !== tabToken) return;
+    const { video, audio } = validateTabStream(stream);
+    await ensureLocalAvailable();
+    if (token !== tabToken || audio.readyState !== 'live' || video.readyState !== 'live') {
+      throw new Error('The selected tab stopped sharing before recognition started.');
+    }
+    const task = { stream, video, audio, engine: null, restartHandle: null,
+      language: ui.language.value, local: ui.mode.value === 'local', restarts: 0 };
+    tabTask = task;
+    audio.onended = () => releaseTab(task, 'The browser stopped sharing tab audio. Partial transcript preserved.');
+    video.onended = () => releaseTab(task, 'Tab sharing was ended in the browser. Partial transcript preserved.');
+    startTabRecognizer(task);
+  } catch (error) {
+    tabMessage(describeTabCaptureError(error), true);
+  } finally {
+    if (!tabTask && stream) {
+      for (const track of stream.getTracks()) { try { track.stop(); } catch {} }
+    }
+    tabStarting = false;
+    updateButtonState();
+  }
+}
 function settleRecordingSegment() {
   if (activeSince !== null) {
     documentState.elapsedMs += Date.now() - activeSince;
@@ -347,12 +481,13 @@ function settleRecordingSegment() {
   drawTimer(); scheduleSave();
 }
 function updateButtonState() {
-  ui.start.disabled = wantsRecording || startInProgress || !Recognizer || Boolean(audioTask) || audioStarting;
+  ui.start.disabled = wantsRecording || startInProgress || !Recognizer || Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting;
   ui.stop.disabled = !wantsRecording && !startInProgress;
   ui.start.innerHTML = documentState.elapsedMs > 0 ? '<span aria-hidden="true">●</span> Resume speaking' : '<span aria-hidden="true">●</span> Start speaking';
-  ui.language.disabled = wantsRecording || startInProgress;
-  ui.mode.disabled = wantsRecording || startInProgress || Boolean(audioTask) || audioStarting;
+  ui.language.disabled = wantsRecording || startInProgress || Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting;
+  ui.mode.disabled = wantsRecording || startInProgress || Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting;
   updateFileControls();
+  updateTabControls();
 }
 function stopRecognition() {
   wantsRecording = false;
@@ -462,7 +597,7 @@ function beginRecognition(token) {
   }
 }
 async function startRecording() {
-  if (!Recognizer || wantsRecording || startInProgress || audioTask || audioStarting) return;
+  if (!Recognizer || wantsRecording || startInProgress || audioTask || audioStarting || tabTask || tabStarting) return;
   const token = ++generation;
   startInProgress = true;
   setStatus('Preparing', 'busy');
@@ -514,7 +649,7 @@ async function importFile(file) {
     replacement = { ...newDocument(), title: file.name.replace(/\.(txt|md)$/i, '').slice(0, 140), text: raw };
   }
   if (documentState.text.trim() && !window.confirm('Replace the current document? Export a backup first if you need it.')) return;
-  stopRecognition(); stopAudioTranscription();
+  stopRecognition(); stopAudioTranscription(); stopTabListen();
   documentState = replacement;
   populate(); saveNow();
   message('Imported successfully. Your previous draft was replaced.');
@@ -530,6 +665,9 @@ function wire() {
   document.addEventListener('paste', handleAudioPaste);
   $('audioInput').addEventListener('change', event => { chooseAudio(event.target.files?.[0]); event.target.value = ''; });
   $('audioServiceConsent').addEventListener('change', updateFileControls);
+  $('tabServiceConsent').addEventListener('change', updateTabControls);
+  $('startTabButton').addEventListener('click', beginTabListen);
+  $('stopTabButton').addEventListener('click', stopTabListen);
   $('transcribeAudioButton').addEventListener('click', beginAudioTranscription);
   $('stopAudioButton').addEventListener('click', stopAudioTranscription);
   const dropArea = $('audioDrop');
@@ -558,10 +696,10 @@ function wire() {
   });
   $('clearButton').addEventListener('click', () => {
     if (!window.confirm('Clear this document and its local autosave? This cannot be undone.')) return;
-    stopRecognition(); stopAudioTranscription(); documentState = newDocument(); populate(); saveNow();
+    stopRecognition(); stopAudioTranscription(); stopTabListen(); documentState = newDocument(); populate(); saveNow();
     message('New empty document ready.');
   });
-  window.addEventListener('pagehide', () => { if (wantsRecording) stopRecognition(); stopAudioTranscription(); saveNow(); });
+  window.addEventListener('pagehide', () => { if (wantsRecording) stopRecognition(); stopAudioTranscription(); stopTabListen(); saveNow(); });
   tickHandle = setInterval(drawTimer, 250);
 }
 loadSaved(); wire(); updateAudioConsent();
@@ -573,6 +711,7 @@ if (!Recognizer) {
 }
 updateButtonState();
 if (!fileRecognitionSupported) audioMessage('Uploaded-file transcription needs desktop Chrome/Edge 135+ and speech recognition. Editing and export still work here.', true);
+if (!tabListenSupported) tabMessage('Tab Listen requires HTTPS and desktop Chrome/Edge 135+ with tab sharing and speech recognition. You can still import audio files.', true);
 if ('serviceWorker' in navigator && window.isSecureContext) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(() => {}));
 }
