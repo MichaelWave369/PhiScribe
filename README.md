@@ -2,8 +2,9 @@
 
 **Microphone or audio file → text → PDF.** A free, original, dependency-free, local-first transcript and document editor, suitable for GitHub Pages.
 
-## Features (v0.2.0)
+## Features (v0.3.0)
 - Record live microphone speech via the browser Web Speech API (where supported).
+- **Message Fast Lane:** paste real audio files when the clipboard exposes them, or drag/drop a voice note; create six reviewable ChatGPT handoffs (technical explanation, troubleshooting, summary, action items, draft reply, transcript verification). The user explicitly copies and pastes; no automatic AI sending or connection to Facebook.
 - **Transcribe an uploaded audio file** in compatible desktop Chromium browsers (Chrome/Edge 135+). Drag/drop or choose an MP3, WAV, M4A, MP4, AAC, OGG, WebM or FLAC clip (max 250 MB). Actual playable codecs depend on the browser.
 - Audio file uses a `MediaElementAudioSourceNode` feeding an audio-only `MediaStreamTrack` to `SpeechRecognition.start(audioTrack)`. It is played silently at normal speed and never routed through the microphone. This experimental API is unavailable in Firefox, Safari and most mobile browsers.
 - Recognition may be interrupted by the browser during long recordings; PhiScribe attempts limited reconnection and retains partial results. Review transcription accuracy before exporting.
@@ -41,6 +42,16 @@ No `npm install` needed. `npm test` runs unit tests with Node 22's built-in runn
 4. Edit any recognition errors in the document editor. Click **Save as PDF** and choose Save as PDF in the print dialog, or download TXT/Markdown/JSON backup.
 
 This is a browser API integration, **not** a bundled Whisper model. It cannot guarantee offline transcription everywhere and the exact accuracy, speed and file codec support are determined by the browser.
+
+## Messenger voice-note workflow
+
+1. Save/download the voice recording as an actual audio file from the app or browser **if the platform offers it**. PhiScribe does not sign into Messenger, read your account, scrape private chats, or extract audio from a player/link.
+2. Drag the file into **Upload / Transcribe**, choose a local file, or try **Paste audio file** if the clipboard contains audio bytes. A clipboard URL or webpage is not an audio file; the app reports that limitation rather than downloading an unknown link.
+3. Choose a recognition privacy mode and transcribe, review errors, then use **Message Fast Lane** to pick one of six handoff goals.
+4. Choose **Copy for ChatGPT** and manually paste it into ChatGPT. The copied text includes an explicit untrusted-source boundary and warns ChatGPT to flag uncertain technical commands and addresses rather than inventing them.
+5. Sender/source labels and handoff mode are saved with the local document and included in a PhiScribe JSON backup. The audio itself is not retained.
+
+**Current limitation:** File transcription still requires compatible desktop Chromium. Mobile clipboard imports may succeed as file selection, but won't make mobile audio-track recognition work. The next meaningful engine upgrade is reliable on-device file transcription independent of experimental browser speech APIs.
 
 ## Privacy and limitations
 
