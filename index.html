@@ -47,6 +47,16 @@
 
           <div class="interim" aria-live="polite"><span class="interim-label">LIVE WORDS</span><span id="interimText">Your words will appear here while you're speaking…</span></div>
 
+          <section class="tab-listen-section" aria-labelledby="tabHeading">
+            <div class="audio-heading"><div><span class="section-kicker">TAB LISTEN · NEW</span><h3 id="tabHeading">Messenger voice note → text</h3></div><span class="audio-format">DESKTOP CHROME / EDGE</span></div>
+            <p class="small-note tab-steps">Open the voice note in another browser tab. Click <strong>Start tab listen</strong>, select that tab, and enable <strong>Share tab audio</strong>. Then play the message there. PhiScribe captures the tab's audio, never your microphone.</p>
+            <div class="audio-consent" id="tabConsentWrap" hidden><label><input type="checkbox" id="tabServiceConsent" /> I agree that my browser's recognition service may receive the shared tab audio. PhiScribe does not send the transcript itself.</label></div>
+            <div class="tab-actions"><button class="button button-primary" id="startTabButton" type="button">◉ Start tab listen</button><button class="button button-secondary" id="stopTabButton" type="button" disabled>■ Stop sharing</button></div>
+            <p id="tabListenStatus" class="small-note tab-listen-status" role="status" aria-live="polite">Choose a tab when prompted. Capture ends when you click Stop or the browser's sharing indicator.</p>
+            <div class="interim tab-live"><span class="interim-label">TAB WORDS</span><span id="tabInterim">Waiting for a shared tab…</span></div>
+            <p class="small-note">The browser supplies a video track for the sharing permission, but PhiScribe does not inspect, display, upload, or save its frames. Do not share sensitive tabs unintentionally.</p>
+          </section>
+
           <section class="audio-import-section" aria-labelledby="audioHeading">
             <div class="audio-heading"><div><span class="section-kicker">UPLOAD / TRANSCRIBE</span><h3 id="audioHeading">Audio file → words</h3></div><span class="audio-format">MP3 · WAV · M4A +</span></div>
             <div id="audioDrop" class="audio-drop">
