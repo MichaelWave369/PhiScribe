@@ -82,3 +82,7 @@ The browser may provide a video track as part of share permission, but PhiScribe
 - v0.6: PhiOffice, EVIE and Super Phi.Vessel export adapters, with user-controlled approval and provenance receipts.
 
 MIT Licensed. Copyright © 2026 MichaelWave369.
+
+## New in v0.5.0: local AI transcription (optional)
+
+PhiScribe supports offline audio-file transcription with an optional local Node.js companion. The companion runs on `127.0.0.1:8765` and calls separately installed `whisper-cli` and `ffmpeg` executables and a local GGML Whisper model. See [Windows and privacy setup](docs/local-ai.md). No third-party source or model binary is bundled. After starting it, open http://127.0.0.1:8765/ and choose an audio file, check the local engine, and select **Transcribe locally**. The earlier Tab Listen feature still uses browser speech recognition.

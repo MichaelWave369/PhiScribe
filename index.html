@@ -74,6 +74,17 @@
             <p id="audioNotice" class="small-note audio-notice" role="status" aria-live="polite">Uses the selected file, never the microphone. Requires desktop Chrome/Edge 135+ and browser speech support. Strict local mode still requires an on-device language pack.</p>
           </section>
 
+          <section class="local-ai-section" aria-labelledby="localAIHeading">
+            <div class="audio-heading"><div><span class="section-kicker">TRUE OFFLINE AI · OPTIONAL</span><h3 id="localAIHeading">Local AI transcription</h3></div><span class="audio-format">YOUR PC · NO CLOUD</span></div>
+            <p class="small-note">Transcribe the selected audio clip using a model running on your computer. Requires the PhiScribe Local Companion, whisper.cpp and FFmpeg installed separately. Nothing is uploaded to an online speech service.</p>
+            <div class="audio-actions">
+              <button id="connectLocalAIButton" class="button button-outline" type="button">⌁ Check local engine</button>
+              <button id="transcribeLocalAIButton" class="button button-primary" type="button" disabled>▶ Transcribe locally</button>
+              <button id="stopLocalAIButton" class="button button-secondary" type="button" disabled>■ Cancel</button>
+            </div>
+            <p id="localAINotice" class="small-note audio-notice" role="status" aria-live="polite">Not connected. First launch the local companion, then click Check local engine. <a href="http://127.0.0.1:8765/" target="_blank" rel="noopener">Open local PhiScribe ↗</a></p>
+          </section>
+
           <div class="divider"></div>
           <label for="languageSelect">Spoken language</label>
           <select id="languageSelect">

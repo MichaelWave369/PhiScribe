@@ -3,6 +3,7 @@ import { BACKUP_FORMAT, countWords, safeFilename, elapsedClock,
 import { validateAudioFile, supportsAudioTrackRecognition, humanDuration, appendTranscript } from './audio-import.mjs';
 import { clipboardAudioExtension, makeAIHandoff } from './message-fast-lane.mjs';
 import { canListenToTab, tabShareOptions, validateTabStream, describeTabCaptureError } from './tab-listen.mjs';
+import { localAIStatus, transcribeLocally, cancelLocalJob } from './local-ai.mjs';
 
 const STORAGE_KEY = 'phiscribe.v1.draft';
 const $ = (id) => document.getElementById(id);
@@ -39,6 +40,9 @@ const tabListenSupported = canListenToTab(navigator.userAgent, Boolean(Recognize
 let tabTask = null;
 let tabStarting = false;
 let tabToken = 0;
+let localAI = null;
+let localAITask = null;
+let localAIConnecting = false;
 
 function setStatus(label, type = 'idle') {
   ui.status.dataset.state = type;
@@ -129,10 +133,10 @@ function audioMessage(text, isError = false) {
 }
 function updateFileControls() {
   $('transcribeAudioButton').disabled = !selectedAudio || !fileRecognitionSupported || Boolean(audioTask) || audioStarting ||
-    wantsRecording || startInProgress || Boolean(tabTask) || tabStarting || (ui.mode.value === 'browser' && !$('audioServiceConsent').checked);
+    wantsRecording || startInProgress || Boolean(tabTask) || tabStarting || Boolean(localAITask) || (ui.mode.value === 'browser' && !$('audioServiceConsent').checked);
   $('stopAudioButton').disabled = !audioTask;
-  $('chooseAudioButton').disabled = Boolean(audioTask) || audioStarting;
-  $('audioInput').disabled = Boolean(audioTask) || audioStarting;
+  $('chooseAudioButton').disabled = Boolean(audioTask) || audioStarting || Boolean(localAITask);
+  $('audioInput').disabled = Boolean(audioTask) || audioStarting || Boolean(localAITask);
 }
 function updateAudioProgress() {
   if (!audioTask) return;
@@ -165,6 +169,7 @@ function releaseAudio(task, status, isError = false) {
   audioMessage(status, isError);
   updateButtonState();
   updateFileControls();
+  updateLocalAIControls();
 }
 function stopAudioTranscription() {
   if (!audioTask) return;
@@ -280,7 +285,7 @@ async function beginAudioTranscription() {
   }
 }
 function chooseAudio(file) {
-  if (audioTask || audioStarting || !file) return;
+  if (audioTask || audioStarting || localAITask || !file) return;
   try { validateAudioFile(file); }
   catch (error) { audioMessage(error.message, true); return; }
   selectedAudio = file;
@@ -291,9 +296,10 @@ function chooseAudio(file) {
   if (!fileRecognitionSupported) audioMessage('Audio-track transcription requires desktop Chrome or Edge 135+ with Web Speech support. Your file stays on this device. Try a supported browser.', true);
   else audioMessage(ui.mode.value === 'local' ? 'Ready to transcribe locally, if the browser has an on-device language pack.' : 'Confirm browser-service audio processing above, then transcribe. The browser provider may receive audio.');
   updateFileControls();
+  updateLocalAIControls();
 }
 async function pasteAudioFromClipboard() {
-  if (audioTask || audioStarting) { audioMessage('Stop the current transcription before importing another clip.', true); return; }
+  if (audioTask || audioStarting || localAITask) { audioMessage('Stop the current transcription before importing another clip.', true); return; }
   if (!window.isSecureContext || !navigator.clipboard?.read) {
     audioMessage('Clipboard-file import needs a secure browser with clipboard.read support. Use Choose audio clip instead.', true); return;
   }
@@ -357,7 +363,7 @@ function updateTabConsent() {
 }
 function updateTabControls() {
   $('startTabButton').disabled = !tabListenSupported || Boolean(tabTask) || tabStarting ||
-    wantsRecording || startInProgress || Boolean(audioTask) || audioStarting ||
+    wantsRecording || startInProgress || Boolean(audioTask) || audioStarting || Boolean(localAITask) ||
     (ui.mode.value === 'browser' && !$('tabServiceConsent').checked);
   $('stopTabButton').disabled = !tabTask;
   $('startTabButton').textContent = tabStarting ? 'Opening tab picker…' : '◉ Start tab listen';
@@ -433,14 +439,14 @@ function startTabRecognizer(task) {
     task.restartHandle = setTimeout(() => startTabRecognizer(task), 500);
   };
   try {
-    // Always pass the audio track; start() without arguments may use the microphone.
+    // Never omit the track; calling start() alone might activate the microphone.
     engine.start(task.audio);
   } catch (error) {
     releaseTab(task, `Tab-track recognition failed (${error.message}). No microphone fallback attempted.`, true);
   }
 }
 async function beginTabListen() {
-  if (!tabListenSupported || tabStarting || tabTask || wantsRecording || startInProgress || audioTask || audioStarting ||
+  if (!tabListenSupported || tabStarting || tabTask || wantsRecording || startInProgress || audioTask || audioStarting || localAITask ||
       (ui.mode.value === 'browser' && !$('tabServiceConsent').checked)) return;
   const token = ++tabToken;
   tabStarting = true;
@@ -448,10 +454,11 @@ async function beginTabListen() {
   tabMessage('Choose the Messenger tab and enable Share tab audio…');
   let stream;
   try {
-    // Invoke the browser's picker immediately from a click, before any await.
+    // The picker MUST be invoked immediately inside the button gesture.
     stream = await navigator.mediaDevices.getDisplayMedia(tabShareOptions());
     if (token !== tabToken) return;
     const { video, audio } = validateTabStream(stream);
+    // Permission is already granted; check/install local language before recognizing.
     await ensureLocalAvailable();
     if (token !== tabToken || audio.readyState !== 'live' || video.readyState !== 'live') {
       throw new Error('The selected tab stopped sharing before recognition started.');
@@ -465,6 +472,7 @@ async function beginTabListen() {
   } catch (error) {
     tabMessage(describeTabCaptureError(error), true);
   } finally {
+    // If activation/validation fails, immediately stop every granted track.
     if (!tabTask && stream) {
       for (const track of stream.getTracks()) { try { track.stop(); } catch {} }
     }
@@ -481,13 +489,14 @@ function settleRecordingSegment() {
   drawTimer(); scheduleSave();
 }
 function updateButtonState() {
-  ui.start.disabled = wantsRecording || startInProgress || !Recognizer || Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting;
+  ui.start.disabled = wantsRecording || startInProgress || !Recognizer || Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting || Boolean(localAITask);
   ui.stop.disabled = !wantsRecording && !startInProgress;
   ui.start.innerHTML = documentState.elapsedMs > 0 ? '<span aria-hidden="true">●</span> Resume speaking' : '<span aria-hidden="true">●</span> Start speaking';
-  ui.language.disabled = wantsRecording || startInProgress || Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting;
-  ui.mode.disabled = wantsRecording || startInProgress || Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting;
+  ui.language.disabled = wantsRecording || startInProgress || Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting || Boolean(localAITask);
+  ui.mode.disabled = wantsRecording || startInProgress || Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting || Boolean(localAITask);
   updateFileControls();
   updateTabControls();
+  updateLocalAIControls();
 }
 function stopRecognition() {
   wantsRecording = false;
@@ -597,7 +606,7 @@ function beginRecognition(token) {
   }
 }
 async function startRecording() {
-  if (!Recognizer || wantsRecording || startInProgress || audioTask || audioStarting || tabTask || tabStarting) return;
+  if (!Recognizer || wantsRecording || startInProgress || audioTask || audioStarting || tabTask || tabStarting || localAITask) return;
   const token = ++generation;
   startInProgress = true;
   setStatus('Preparing', 'busy');
@@ -615,6 +624,69 @@ async function startRecording() {
     startInProgress = false;
     updateButtonState();
   }
+}
+function localAIMessage(text, error = false) {
+  const note = $('localAINotice');
+  // Replace only the status text, never interpolate model output as HTML.
+  note.textContent = text;
+  note.classList.toggle('error', error);
+}
+function updateLocalAIControls() {
+  const busy = Boolean(localAITask) || localAIConnecting;
+  const other = Boolean(audioTask) || audioStarting || Boolean(tabTask) || tabStarting || wantsRecording || startInProgress;
+  $('connectLocalAIButton').disabled = busy;
+  $('transcribeLocalAIButton').disabled = !selectedAudio || !localAI?.ready || busy || other;
+  $('stopLocalAIButton').disabled = !localAITask;
+}
+async function checkLocalAI() {
+  if (localAITask || localAIConnecting) return;
+  localAIConnecting = true;
+  updateLocalAIControls();
+  localAIMessage('Checking local engine on 127.0.0.1…');
+  try {
+    localAI = await localAIStatus();
+    if (!localAI.ready) {
+      localAIMessage('Local companion detected, but a speech model or executable is missing. Check the Local Companion setup instructions.', true);
+    } else {
+      localAIMessage(`Local AI ready (${localAI.model || 'model configured'}). Select a file and click Transcribe locally.`);
+    }
+  } catch {
+    localAI = null;
+    localAIMessage('Local companion unavailable. Start local/start-windows.ps1 on your PC, or open http://127.0.0.1:8765/ and use PhiScribe there. Browser security may block GitHub Pages connecting to localhost.', true);
+  } finally {
+    localAIConnecting = false;
+    updateLocalAIControls();
+  }
+}
+async function beginLocalAI() {
+  if (!selectedAudio || !localAI?.ready || localAITask || audioTask || audioStarting || tabTask || tabStarting || wantsRecording || startInProgress) return;
+  const task = { controller: new AbortController(), token: localAI.token };
+  localAITask = task;
+  updateButtonState();
+  localAIMessage('Transcribing privately on this computer. Larger models and longer recordings may take time…');
+  try {
+    const text = await transcribeLocally(selectedAudio, ui.language.value, task.token, task.controller.signal);
+    if (localAITask !== task) return;
+    if (text.trim()) appendRecognizedWords(text);
+    localAIMessage(text.trim() ? 'Local transcription complete. Review the transcript and export or copy for ChatGPT.' : 'Processing finished, but the model returned no speech.');
+  } catch (error) {
+    if (localAITask !== task) return;
+    if (task.controller.signal.aborted) localAIMessage('Local transcription cancelled. Your existing editor text is safe.');
+    else localAIMessage(error?.message || 'Local engine failed. Check the companion console.', true);
+  } finally {
+    if (localAITask === task) localAITask = null;
+    updateButtonState();
+  }
+}
+function stopLocalAI() {
+  if (!localAITask) return;
+  const task = localAITask;
+  task.controller.abort();
+  // Separate authenticated cancel request ensures the process is stopped even if the upload is complete.
+  cancelLocalJob(task.token).catch(() => {});
+  localAIMessage('Cancellation requested. Existing transcript text remains untouched.');
+  localAITask = null;
+  updateButtonState();
 }
 function downloadFile(contents, filename, mime) {
   const blob = new Blob([contents], { type: `${mime};charset=utf-8` });
@@ -649,7 +721,7 @@ async function importFile(file) {
     replacement = { ...newDocument(), title: file.name.replace(/\.(txt|md)$/i, '').slice(0, 140), text: raw };
   }
   if (documentState.text.trim() && !window.confirm('Replace the current document? Export a backup first if you need it.')) return;
-  stopRecognition(); stopAudioTranscription(); stopTabListen();
+  stopRecognition(); stopAudioTranscription(); stopTabListen(); stopLocalAI();
   documentState = replacement;
   populate(); saveNow();
   message('Imported successfully. Your previous draft was replaced.');
@@ -670,6 +742,9 @@ function wire() {
   $('stopTabButton').addEventListener('click', stopTabListen);
   $('transcribeAudioButton').addEventListener('click', beginAudioTranscription);
   $('stopAudioButton').addEventListener('click', stopAudioTranscription);
+  $('connectLocalAIButton').addEventListener('click', checkLocalAI);
+  $('transcribeLocalAIButton').addEventListener('click', beginLocalAI);
+  $('stopLocalAIButton').addEventListener('click', stopLocalAI);
   const dropArea = $('audioDrop');
   dropArea.addEventListener('dragover', event => { event.preventDefault(); if (!audioTask) dropArea.classList.add('drag-active'); });
   dropArea.addEventListener('dragleave', () => dropArea.classList.remove('drag-active'));
@@ -696,10 +771,10 @@ function wire() {
   });
   $('clearButton').addEventListener('click', () => {
     if (!window.confirm('Clear this document and its local autosave? This cannot be undone.')) return;
-    stopRecognition(); stopAudioTranscription(); stopTabListen(); documentState = newDocument(); populate(); saveNow();
+    stopRecognition(); stopAudioTranscription(); stopTabListen(); stopLocalAI(); documentState = newDocument(); populate(); saveNow();
     message('New empty document ready.');
   });
-  window.addEventListener('pagehide', () => { if (wantsRecording) stopRecognition(); stopAudioTranscription(); stopTabListen(); saveNow(); });
+  window.addEventListener('pagehide', () => { if (wantsRecording) stopRecognition(); stopAudioTranscription(); stopTabListen(); stopLocalAI(); saveNow(); });
   tickHandle = setInterval(drawTimer, 250);
 }
 loadSaved(); wire(); updateAudioConsent();
@@ -710,6 +785,7 @@ if (!Recognizer) {
   message('Choose strict on-device recognition or knowingly allow your browser speech service. Your editable transcript is saved only in this browser.');
 }
 updateButtonState();
+updateLocalAIControls();
 if (!fileRecognitionSupported) audioMessage('Uploaded-file transcription needs desktop Chrome/Edge 135+ and speech recognition. Editing and export still work here.', true);
 if (!tabListenSupported) tabMessage('Tab Listen requires HTTPS and desktop Chrome/Edge 135+ with tab sharing and speech recognition. You can still import audio files.', true);
 if ('serviceWorker' in navigator && window.isSecureContext) {
