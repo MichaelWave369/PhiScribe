@@ -1,6 +1,6 @@
 {
   "name": "phiscribe",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Original dependency-free local-first voice to text and PDF document editor",
